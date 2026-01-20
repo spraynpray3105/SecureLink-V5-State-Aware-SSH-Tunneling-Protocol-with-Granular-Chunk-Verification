@@ -1,6 +1,6 @@
 #   Python Encryption Method
 #   2026 (C) Elijah Martin
-#   This script will establish communications over SSH and send
+#   This script will establish communications over HTTPS and send
 #   an encrypted file that will be decrypted by the receiving script.
 import time
 import random
@@ -155,7 +155,7 @@ def ValidateChunks(sock, key, cryptoarray, text):
             # Add \n so the Receiver knows this letter is a complete message
             sock.sendall(f"{charNum}|{letter}".encode('utf-8'))
             time.sleep(0.05) # Small sync for Windows SSH
-            sock.sendall("EXIT_SIGNAL".encode())
+            sock.sendall("|EXIT_SIGNAL".encode())
             charNum += 1
         else:
             print(f'chunk_received:{chunk} + key_received:{key} \n Chunk or Key Mismatch!')
@@ -185,9 +185,10 @@ def run_tunnel(pmb, k, cryptoarray):
             send_data(s, tunnel.local_bind_port)
             time.sleep(0.2)
             ValidateChunks(s, k, cryptoarray, text)
+            input("Transmission complete. Press Enter to tear down the tunnel...")
 
 
-        input("Transmission complete. Press Enter to tear down the tunnel...")
+
 
         print("[*] Tunnel: Closing...")
 
@@ -207,4 +208,3 @@ while True:
     run_tunnel(x, key, EncryptionArray)
     waitforuser()
     pass
-
