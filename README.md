@@ -64,6 +64,9 @@ Paramiko 4.0 Compatibility: Includes a monkeypatch for the AttributeError: DSSKe
 Windows SSH Stabilization: Implements mandatory delays to allow the Windows sshd service to allocate local loopback resources before transmission begins.
 Socket Management: Built-in checks for WinError 10038 to ensure sockets are managed correctly within nested context managers.
 
+Reworked the chunk system to account for TCP Fragmentation, which was noticeable when sending large strings across the tunnel. Implemented a counter into each
+chunk to tell the system which piece it was and also added a termination phrase that was passed only after the chunk's ```socket.sendall()``` function is called.
+
 ### Disclaimer
 This is an experimental cryptographic protocol created for educational purposes in security research. While it utilizes the robust Ed25519 SSH standard, the custom "query-back" logic is intended for learning about stateful protocol design and should be vetted further before use in production-critical environments.
 
@@ -72,4 +75,3 @@ Elijah Martin
 January 2026
 Study in high-verification data obfuscation.
 "Never trust the pipe. Always verify the data."
-{content: }
