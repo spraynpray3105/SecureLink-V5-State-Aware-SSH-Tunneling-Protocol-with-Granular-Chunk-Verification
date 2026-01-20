@@ -1,6 +1,6 @@
 #   Python Encryption Method
 #   2026 (C) Elijah Martin
-#   This script will establish communications over HTTPS and send
+#   This script will establish communications over SSH and send
 #   an encrypted file that will be decrypted by the receiving script.
 import time
 import random
@@ -184,3 +184,4 @@ def run_receiver():
                 print(f"[!] Received: {data.decode('utf-8', errors='ignore')}")
 if __name__ == "__main__":
     run_receiver()
+
