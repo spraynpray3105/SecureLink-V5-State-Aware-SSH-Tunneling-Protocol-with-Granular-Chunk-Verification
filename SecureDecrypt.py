@@ -6,6 +6,7 @@ import time
 import random
 import string
 import socket
+import re
 
 # This ruleset is used to generate the key utilizing the Preamble.
 # It will be in the decryptor code too.
@@ -57,9 +58,9 @@ arr = [
     121042445
 ]
 frame = ""
-
+message = ""
 def extractor(frame):
-    data = frame.split("|")
+    data = frame.split("|", 2)
     print(data)
     return data
 
@@ -97,16 +98,42 @@ def MakeChunks(preamble, encryptedText):
         current_index += int(size)
     return chunks
 
+def recv_until_terminator(sock, terminator="EXIT_SIGNAL"):
+    """Rebuilds fragmented data until the terminator is found."""
+    buffer = b""
+    while not buffer.endswith(terminator.encode()):
+        chunk = sock.recv(1024)
+        if not chunk:  
+            return None
+        buffer += chunk
+    return buffer.decode('utf-8').strip()
+
 def QueryChunk(sock, chunks, key):
     s = sock
     package = ""
     message = ""
+    i = 0
+    message_map = {} # Use a dictionary to store letters by their index
     for chunk in chunks:
-        package = str(chunk) + "|" + str(key)
-        sock.sendall(package.encode())
+        package = f"{i}|{chunk}|{key}\n"
+        s.sendall(package.encode())
+        i += 1
+        time.sleep(0.2)
+        s.sendall("EXIT_SIGNAL".encode())
+        time.sleep(0.2)
         print("Chunk Sent, awaiting validation.")
-        response = s.recv(1024).decode('utf-8')
-        message = message + str(response)
+        while True:
+            response = recv_until_terminator(s, "EXIT_SIGNAL")
+            if not response:
+                break
+            if "EXIT_SIGNAL" in response:
+                response = re.sub("EXIT_SIGNAL", "", response)
+                break
+            if response:
+                idx, letter = response.split("|")
+                message_map[int(idx)] = letter
+            final_message = "".join([message_map[i] for i in sorted(message_map.keys())])
+    message = final_message
     print(message)
     return message
 
@@ -123,31 +150,37 @@ def run_receiver():
 
 
 
-        while True: # Keep it running for multiple chunks
+        while True:
             conn, addr = s.accept()
+            buffer = ""
             with conn:
                 print(f"[*] Receiver: Connection from {addr}")
-                data = conn.recv(4096) # Increased buffer for your encrypted chunks
-                if data:
-                    print(f"[!] Receiver: Success! Data received: '{data.decode()}'")
-                    input("Press enter to decrypt....")
-                    a = extractor(str(data.decode()))
+                while True:
+                    data = conn.recv(4096)
+                    if not data:
+                        break
+                    if "EXIT_SIGNAL".encode() in data:
+                        print("[*] Receiver: Downloaded Encrypted Data.")
+                        data = re.sub("EXIT_SIGNAL".encode(), "".encode(), data)
+                        buffer += str(data.decode())
+                        break
+                    buffer += str(data.decode())
+                if buffer:
+                    print(f"[!] Receiver: Success! Data received: '{buffer}'")
+                    a = extractor(str(buffer))
                     preamble = DecryptPreamble(a[0])
                     print("Decrypted preamble! \n" + str(preamble))
-                    input()
                     x = GenerateKey(a[0])
                     if x == str(a[1]):
                         print("Matching Authentication Key Generated.")
                         chunks = MakeChunks(preamble, a[2])
-                        QueryChunk(conn, chunks, x)
-                        input()
+                        message = QueryChunk(conn, chunks, x)
+                        print(message)
+                        input("Press enter to ")
                     else:
                         print("Key Gen failed.")
-                        input()
-                    input()
                 if not data:
                     break
                 print(f"[!] Received: {data.decode('utf-8', errors='ignore')}")
-                # For your protocol: This is where you'd send back the verification query
 if __name__ == "__main__":
     run_receiver()
