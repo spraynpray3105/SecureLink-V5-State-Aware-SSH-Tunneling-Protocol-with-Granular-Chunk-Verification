@@ -8,6 +8,7 @@ import string
 import socket
 import getpass
 import paramiko
+import re
 # Fix for Paramiko 4.0+ compatibility with sshtunnel
 if not hasattr(paramiko, 'DSSKey'):
     paramiko.DSSKey = paramiko.RSAKey
@@ -119,21 +120,46 @@ def send_data(s, port):
         message = str(Frame)
         s.sendall(message.encode())
         print(f"[*] Sender: Encypted Message sent to local tunnel port {port}")
+        time.sleep(0.2)
+        s.sendall("EXIT_SIGNAL".encode())
+
+def recv_until_terminator(sock, terminator="EXIT_SIGNAL"):
+    """Rebuilds fragmented data until the terminator is found."""
+    buffer = b""
+    while not buffer.endswith(terminator.encode()):
+        chunk = sock.recv(1024)
+        if not chunk:  # Connection closed unexpectedly
+            return None
+        buffer += chunk
+    return buffer.decode('utf-8').strip()
 
 def ValidateChunks(sock, key, cryptoarray, text):
-    s = sock
-    l = "" #  l represents the index used to find the letter
-    letter = ""
-    for chunk in cryptoarray:
-        letter = text[cryptoarray.index(chunk)]
-        r = s.recv(1024).decode('utf-8')
-        k = r.split("|")
-        l = str(k[0])
-        g = str(k[1])
-        print("Chunk Received"+ l)
-        if l == chunk and g == str(key):
-            print("Chunk validated: " + str(chunk))
-            sock.sendall(letter.encode())
+    charNum = 0
+    for i, chunk in enumerate(cryptoarray):
+        letter = text[i]
+        # 1. Use the helper to get the FULL message
+        r = recv_until_terminator(sock, "\n")
+        print(r + "READ THE ABOVE")
+        if not r: break
+
+        # 2. Split safely
+        k = r.split("|", 2)
+        if len(k) < 3:
+            continue
+        print(k)
+
+        chunk_received, key_received = k[1], k[2]
+
+        if chunk_received == str(chunk) and key_received == str(key):
+            print(f"[+] Verified chunk {i}. Sending: {letter}")
+            # Add \n so the Receiver knows this letter is a complete message
+            sock.sendall(f"{charNum}|{letter}".encode('utf-8'))
+            time.sleep(0.05) # Small sync for Windows SSH
+            sock.sendall("EXIT_SIGNAL".encode())
+            charNum += 1
+        else:
+            print(f'chunk_received:{chunk} + key_received:{key} \n Chunk or Key Mismatch!')
+
 def run_tunnel(pmb, k, cryptoarray):
     # 1. Explicitly load Ed25519 key to bypass Paramiko 4.0+ DSSKey errors
     if not os.path.exists(KEY_PATH):
@@ -157,7 +183,9 @@ def run_tunnel(pmb, k, cryptoarray):
             # Use the tunnel
             time.sleep(0.5)
             send_data(s, tunnel.local_bind_port)
+            time.sleep(0.2)
             ValidateChunks(s, k, cryptoarray, text)
+
 
         input("Transmission complete. Press Enter to tear down the tunnel...")
 
@@ -170,10 +198,10 @@ x = GeneratePreamble(EncryptionArray)
 key = GenerateKey(x)
 print("Generated Key from the Preamble... Ready to decrypt!!!")
 print("Press enter to open a local connection and send to the receiver....")
-waitforuser()
-
 # Form a frame so the receiver can separate the Preamble, Key and Payload.
 Frame = FormFrame(x, key, EncryptedText)
+
+
 
 while True:
     run_tunnel(x, key, EncryptionArray)
