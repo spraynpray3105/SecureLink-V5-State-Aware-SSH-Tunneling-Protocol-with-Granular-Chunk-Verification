@@ -58,7 +58,7 @@ arr = [
     121042445
 ]
 frame = ""
-message = ""
+
 def extractor(frame):
     data = frame.split("|", 2)
     print(data)
@@ -103,7 +103,7 @@ def recv_until_terminator(sock, terminator="EXIT_SIGNAL"):
     buffer = b""
     while not buffer.endswith(terminator.encode()):
         chunk = sock.recv(1024)
-        if not chunk:  
+        if not chunk:  # Connection closed unexpectedly
             return None
         buffer += chunk
     return buffer.decode('utf-8').strip()
@@ -117,23 +117,25 @@ def QueryChunk(sock, chunks, key):
     for chunk in chunks:
         package = f"{i}|{chunk}|{key}\n"
         s.sendall(package.encode())
-        i += 1
         time.sleep(0.2)
         s.sendall("EXIT_SIGNAL".encode())
         time.sleep(0.2)
         print("Chunk Sent, awaiting validation.")
         while True:
             response = recv_until_terminator(s, "EXIT_SIGNAL")
+            f = response.split("|")
+            print(f)
             if not response:
                 break
             if "EXIT_SIGNAL" in response:
-                response = re.sub("EXIT_SIGNAL", "", response)
+                if int(f[0]) == int(i):
+                    message = message + f[1]
+                    i += 1
+                else:
+                    print("TCP Fragmentation Mismatatch!")
+                    print(f"Indicates {f[0]}, expecting {i}")
                 break
-            if response:
-                idx, letter = response.split("|")
-                message_map[int(idx)] = letter
-            final_message = "".join([message_map[i] for i in sorted(message_map.keys())])
-    message = final_message
+
     print(message)
     return message
 
@@ -150,20 +152,20 @@ def run_receiver():
 
 
 
-        while True:
+        while True: # Keep it running for multiple chunks
             conn, addr = s.accept()
             buffer = ""
             with conn:
                 print(f"[*] Receiver: Connection from {addr}")
                 while True:
-                    data = conn.recv(4096)
+                    data = conn.recv(4096) # Increased buffer for your encrypted chunks
                     if not data:
                         break
                     if "EXIT_SIGNAL".encode() in data:
                         print("[*] Receiver: Downloaded Encrypted Data.")
                         data = re.sub("EXIT_SIGNAL".encode(), "".encode(), data)
                         buffer += str(data.decode())
-                        break
+                        break # This exits the 'while True' loop
                     buffer += str(data.decode())
                 if buffer:
                     print(f"[!] Receiver: Success! Data received: '{buffer}'")
@@ -174,14 +176,12 @@ def run_receiver():
                     if x == str(a[1]):
                         print("Matching Authentication Key Generated.")
                         chunks = MakeChunks(preamble, a[2])
-                        message = QueryChunk(conn, chunks, x)
-                        print(message)
-                        input("Press enter to ")
+                        QueryChunk(conn, chunks, x)
                     else:
                         print("Key Gen failed.")
                 if not data:
                     break
                 print(f"[!] Received: {data.decode('utf-8', errors='ignore')}")
+                # For your protocol: This is where you'd send back the verification query
 if __name__ == "__main__":
     run_receiver()
-
